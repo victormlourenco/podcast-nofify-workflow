@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
 import os
+import json
 import hashlib
 import xml.etree.ElementTree as ET
 from pathlib import Path
-import requests
+from urllib.request import urlopen, Request
+from urllib.error import URLError
 
 RSS_URL = os.environ.get("RSS_URL")
 TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN")
@@ -12,9 +14,8 @@ STATE_FILE = Path("data/last_episode_hash.txt")
 
 
 def fetch_rss_feed():
-    response = requests.get(RSS_URL, timeout=30)
-    response.raise_for_status()
-    return response.text
+    with urlopen(RSS_URL, timeout=30) as response:
+        return response.read().decode("utf-8")
 
 
 def parse_latest_episode(rss_content):
@@ -67,13 +68,14 @@ def send_telegram_notification(episode):
     url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
     
     for chat_id in TELEGRAM_CHAT_IDS:
-        payload = {"chat_id": chat_id, "text": message}
-        response = requests.post(url, json=payload, timeout=30)
+        payload = json.dumps({"chat_id": chat_id, "text": message}).encode("utf-8")
+        req = Request(url, data=payload, headers={"Content-Type": "application/json"})
         
-        if response.ok:
-            print(f"Notification sent to {chat_id}")
-        else:
-            print(f"Failed to send to {chat_id}: {response.text}")
+        try:
+            with urlopen(req, timeout=30) as response:
+                print(f"Notification sent to {chat_id}")
+        except URLError as e:
+            print(f"Failed to send to {chat_id}: {e}")
 
 
 def main():
@@ -81,7 +83,7 @@ def main():
     
     try:
         rss_content = fetch_rss_feed()
-    except requests.RequestException as e:
+    except URLError as e:
         print(f"Failed to fetch RSS feed: {e}")
         return
     
@@ -111,4 +113,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
